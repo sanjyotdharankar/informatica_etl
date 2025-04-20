@@ -1,0 +1,21 @@
+informatica_xml_parser/
+│
+├── main.py                  # The main script to run
+├── parser.py                # Contains logic for parsing XML
+├── summarizer.py            # Contains summarization functions
+├── utils.py                 # Optional utility helpers
+├── inforamtica_xml/            # Your input XML files
+├── output/                  # Final summary outputs
+└── requirements.txt         # Dependencies
+
+
+environment variables
+python -m venv venv
+.\venv\Scripts\activate
+deactive  deactivate
+
+pip install -r requirements.txt
+
+python main.py
+
+

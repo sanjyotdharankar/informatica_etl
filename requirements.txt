@@ -1,0 +1,11 @@
+lxml
+openai          # Optional if using GPT summarization
+jinja2          # Optional for nice HTML output
+# diagrams
+# pillow
+# graphviz # not for now
+
+# pip install 
+networkx 
+matplotlib
+# pip install transformers datasets peft bitsandbytes

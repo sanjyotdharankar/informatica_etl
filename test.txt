@@ -1,0 +1,437 @@
+📌 Step-by-Step: Train Code LLaMA to Convert Informatica ETL XML to PySpark
+✅ Step 1: Understand Your Input/Output Pairs
+You need to turn your Informatica XML mappings into a structured form that can be paired with target PySpark code.
+A model like Code LLaMA learns from prompt → completion pairs.
+
+Input (Prompt): Informatica ETL XML snippet (or parsed summary)
+
+Output (Completion): Equivalent PySpark code
+
+Example (in JSONL for training):
+
+json
+Copy
+Edit
+{"prompt": "<XML mapping content or parsed version>", "completion": "PySpark code equivalent"}
+✅ Step 2: Extract and Preprocess Informatica XML
+The raw XML isn’t ideal for a model — so parse it into structured, human-readable metadata.
+
+2.1 Parse Informatica XML
+Use xml.etree.ElementTree or lxml in Python to extract:
+
+Source Definitions
+
+Target Definitions
+
+Connector flows (source-to-target)
+
+Transformation logic
+
+Column mappings, data types
+
+Example:
+
+python
+Copy
+Edit
+import xml.etree.ElementTree as ET
+
+tree = ET.parse("mapping.xml")
+root = tree.getroot()
+
+for source in root.findall(".//SOURCE"):
+    print(source.attrib)
+
+for connector in root.findall(".//CONNECTOR"):
+    print(connector.attrib)
+2.2 Convert to Structured Metadata
+Convert parsed XML into a simplified intermediate JSON or Markdown format.
+
+Example JSON:
+
+json
+Copy
+Edit
+{
+  "source": "customer",
+  "target": "customer_clean",
+  "mappings": [
+    {"from": "cust_id", "to": "customer_id"},
+    {"from": "cust_name", "to": "name"}
+  ],
+  "filters": ["cust_status = 'Active'"],
+  "transformations": ["upper(cust_name)"]
+}
+✅ Step 3: Write Equivalent PySpark Code
+For each parsed mapping, manually or programmatically write the corresponding PySpark code.
+
+Example:
+
+python
+Copy
+Edit
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import upper
+
+spark = SparkSession.builder.appName("ETL").getOrCreate()
+df = spark.read.format("csv").option("header", "true").load("customer.csv")
+
+df_clean = df.filter(df.cust_status == "Active") \
+             .withColumn("name", upper(df.cust_name)) \
+             .selectExpr("cust_id as customer_id", "name")
+
+df_clean.write.parquet("customer_clean.parquet")
+✅ Step 4: Create JSONL for Code LLaMA Fine-tuning
+Combine your parsed metadata and PySpark code into a prompt-completion JSONL file.
+
+Example JSONL:
+
+json
+Copy
+Edit
+{"prompt": "Source: customer, Target: customer_clean, Mappings: cust_id->customer_id, cust_name->name, Filter: cust_status='Active', Transform: upper(cust_name)", "completion": "df_clean = df.filter(df.cust_status == 'Active').withColumn('name', upper(df.cust_name)).selectExpr('cust_id as customer_id', 'name')"}
+Repeat for multiple examples.
+
+✅ Step 5: Prepare for Code LLaMA Fine-tuning
+5.1 Install LLaMA + HuggingFace Tools
+bash
+Copy
+Edit
+pip install transformers datasets peft bitsandbytes
+5.2 Load Code LLaMA
+python
+Copy
+Edit
+from transformers import AutoModelForCausalLM, AutoTokenizer
+
+model = AutoModelForCausalLM.from_pretrained("codellama/CodeLlama-7b-Python-hf")
+tokenizer = AutoTokenizer.from_pretrained("codellama/CodeLlama-7b-Python-hf")
+✅ Step 6: Fine-tune with PEFT / LoRA
+Use PEFT (Parameter-Efficient Fine-Tuning) with LoRA adapters for efficient training.
+
+6.1 Define Dataset
+python
+Copy
+Edit
+from datasets import load_dataset
+
+dataset = load_dataset("json", data_files="etl_pyspark.jsonl")
+6.2 Fine-tune with LoRA
+python
+Copy
+Edit
+from peft import LoraConfig, get_peft_model
+from transformers import TrainingArguments, Trainer
+
+lora_config = LoraConfig(
+    r=8,
+    lora_alpha=32,
+    target_modules=["q_proj", "v_proj"],
+    lora_dropout=0.05,
+    bias="none",
+    task_type="CAUSAL_LM"
+)
+
+model = get_peft_model(model, lora_config)
+
+training_args = TrainingArguments(
+    output_dir="./etl_llama_model",
+    per_device_train_batch_size=2,
+    num_train_epochs=3,
+    logging_steps=10,
+    save_steps=100
+)
+
+trainer = Trainer(
+    model=model,
+    args=training_args,
+    train_dataset=dataset
+)
+
+trainer.train()
+✅ Step 7: Test the Fine-tuned Model
+Use the model to generate PySpark code from new XML-derived metadata.
+
+python
+Copy
+Edit
+prompt = "Source: employee, Target: employee_clean, Mappings: emp_id->employee_id, emp_name->name, Filter: emp_status='Active', Transform: upper(emp_name)"
+inputs = tokenizer(prompt, return_tensors="pt").to("cuda")
+
+outputs = model.generate(**inputs, max_length=300)
+print(tokenizer.decode(outputs[0], skip_special_tokens=True))
+✅ Summary
+
+Step	Description
+1	Parse and understand Informatica XML
+2	Convert XML to structured metadata
+3	Write matching PySpark code
+4	Create JSONL prompt-completion pairs
+5	Load Code LLaMA & prepare for fine-tuning
+6	Fine-tune with PEFT/LoRA
+7	Test model predictions
+
+
+
+
+{"prompt": "Source: customer.csv, Target: customer_clean.parquet, Mappings: cust_id->customer_id, cust_name->name, Filter: cust_status='Active', Transform: upper(cust_name)", "completion": "df_clean = df.filter(df.cust_status == 'Active').withColumn('name', upper(df.cust_name)).selectExpr('cust_id as customer_id', 'name')"}
+
+Add transformations with actual expressions (like UPPER(EMP_NAME)?)
+Add a Lookup or Aggregator example?
+Turn this into a JSON or Markdown representation for LLM training?
+
+
+import os
+import re
+import json
+
+def parse_md_custom(md_path):
+    with open(md_path, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    def extract_title(tag):
+        match = re.search(rf'##+ .*{tag}.*\n+([^#]*)', content, re.IGNORECASE)
+        return match.group(1).strip() if match else ""
+
+    def extract_section(title):
+        pattern = rf"### {title}.*?\n(.*?)(?=(\n###|\n##|\Z))"
+        matches = re.findall(pattern, content, re.DOTALL | re.IGNORECASE)
+        return matches[0][0].strip() if matches else ""
+
+    def extract_mapping_name():
+        match = re.search(r"# Mapping:\s*(.*)", content)
+        return match.group(1).strip() if match else "UnknownMapping"
+
+    def extract_connector_flows():
+        flows = re.findall(r"- `(.*?)` ➝ `(.*?)`", content)
+        return [f"{src} -> {dst}" for src, dst in flows]
+
+    def extract_sql_and_expressions():
+        sql_blocks = re.findall(r"```sql\n(.*?)```", content, re.DOTALL)
+        expressions = re.findall(r"→\s*(IIF\(.*?\))", content)
+        return sql_blocks, expressions
+
+    mapping_name = extract_mapping_name()
+    source_section = re.search(r"### ACCOUNT.*?\n", content)
+    target_section = re.search(r"### DB_ACCOUNT.*?\n", content)
+    source = source_section.group(0).strip() if source_section else "UnknownSource"
+    target = target_section.group(0).strip() if target_section else "UnknownTarget"
+    flows = extract_connector_flows()
+    sql_blocks, expressions = extract_sql_and_expressions()
+
+    prompt_lines = [
+        f"Mapping: {mapping_name}",
+        f"Source: {source}",
+        f"Target: {target}",
+        "Transformations:"
+    ]
+    for sql in sql_blocks:
+        prompt_lines.append(f"- SQL: {sql.strip()}")
+    for expr in expressions:
+        prompt_lines.append(f"- Expression: {expr.strip()}")
+
+    if flows:
+        prompt_lines.append("Connector Flow:")
+        prompt_lines += [f"- {f}" for f in flows]
+
+    return "\n".join(prompt_lines)
+
+def combine_advanced(input_folder, output_jsonl_file):
+    entries = []
+    for file in os.listdir(input_folder):
+        if file.endswith(".md"):
+            base_name = os.path.splitext(file)[0]
+            md_path = os.path.join(input_folder, file)
+            py_file = f"{base_name}_pyspark.py"
+            py_path = os.path.join(input_folder, py_file)
+
+            if os.path.exists(py_path):
+                prompt = parse_md_custom(md_path)
+
+                with open(py_path, 'r', encoding='utf-8') as f:
+                    completion_code = f.read().strip()
+
+                entry = {
+                    "prompt": prompt,
+                    "completion": f"\n```python\n{completion_code}\n```"
+                }
+
+                entries.append(entry)
+                print(f"✅ Processed: {base_name}")
+            else:
+                print(f"⚠️ Skipped: No corresponding _pyspark.py for {base_name}")
+
+    with open(output_jsonl_file, 'w', encoding='utf-8') as f_out:
+        for entry in entries:
+            json.dump(entry, f_out)
+            f_out.write('\n')
+
+    print(f"\n✅ All entries saved to: {output_jsonl_file}")
+
+# Example usage
+combine_advanced("your_input_folder", "train_combined.jsonl")
+
+
+<? xml version="1.0" encoding="UTF-8"?>
+<!-- Informatica proprietary -- >
+<! DOCTYPE POWERMART SYSTEM "powrmart.dtd">
+<POWERMART CREATION_DATE="04/15/2025 09:19:35" REPOSITORY VERSION="189.98">
+<REPOSITORY NAME="REPO ECOM DEV" VERSION="189" CODEPAGE="UTF-8" DATABASETYPE="Microsoft SQL Server">
+<FOLDER NAME="REGRENEW" GROUP="" OWNER="Administrator" SHARED="NOTSHARED" DESCRIPTION="WO0000001270969" PERMISSIONS="rwx --
+<MAPPING CRCVALUE ="3350994637" DESCRIPTION ="" ISVALID ="YES" NAME ="m_LOAD_DET_EXTRACT_New_Salesforce_Account" OBJECTVERSION ="1" VERSIONNUMBER ="8">
+<TRANSFORMATION DESCRIPTION ="" NAME ="SQ Shortcut to Account" OBJECTVERSION ="1" REUSABLE ="NO" TYPE ="Application Source Qualifier" VERSIONNUMBER ="4">
+<TRANSFORMFIELD DATATYPE ="string" DEFAULTVALUE ="" DESCRIPTION ="" NAME ="Id" PICTURETEXT ="" PORTTYPE ="INPUT/OUTPUT" PRECISION ="18" SCALE ="0"/>
+<TRANSFORMFIELD DATATYPE ="integer" DEFAULTVALUE ="" DESCRIPTION ="" NAME ="IsDeleted" PICTURETEXT ="" PORTTYPE ="INPUT/OUTPUT" PRECISION ="10" SCALE ="0"/>
+<TABLEATTRIBUTE NAME ="Tracing Level" VALUE ="Normal"/>
+<TABLEATTRIBUTE NAME ="Output Is Deterministic" VALUE ="NO"/>
+</TRANSFORMATION>
+<TRANSFORMATION DESCRIPTION ="" NAME ="lkp Account" OBJECTVERSION ="1" REUSABLE ="NO" TYPE ="Lookup Procedure" VERSIONNUMBER ="1">
+<TRANSFORMFIELD DATATYPE ="date/time" DEFAULTVALUE ="" DESCRIPTION ="" NAME ="LastModifiedDate" PICTURETEXT ="" PORTTYPE ="LOOKUP/RETURN/OUTPUT" PRECISION ="29" SCALE
+="9"/>
+<TRANSFORMFIELD DATATYPE ="integer" DEFAULTVALUE ="" DESCRIPTION ="" NAME ="dummy" PICTURETEXT ="" PORTTYPE ="LOOKUP/OUTPUT" PRECISION ="10" SCALE ="0"/>
+<TRANSFORMFIELD DATATYPE ="integer" DEFAULTVALUE ="" DESCRIPTION ="" NAME ="in dummy" PICTURETEXT ="" PORTTYPE ="INPUT/OUTPUT" PRECISION ="10" SCALE ="0"/>
+<TABLEATTRIBUTE NAME ="Lookup Sql Override" VALUE ="SELECT &#xD; &#xA; New_Salesforce_Account.LastModifiedDate as LastModifiedDate, &#xD; &#xA; 1 as dummy &#xD; &#xA; FROM
+$$TARGET SCHEMA DET STG.New Salesforce Account&#xD; &#xA; WHERE LastModifiedDate IN (SELECT max (LastModifiedDate) FROM $$TARGET_SCHEMA_DET_STG.New_Salesforce_Account) "/>
+<TABLEATTRIBUTE NAME ="Lookup table name" VALUE ="New_Salesforce_Account"/>
+<TABLEATTRIBUTE NAME ="Lookup Source Filter" VALUE =""/>
+<TABLEATTRIBUTE NAME
+<TABLEATTRIBUTE NAME ="Lookup policy on multiple match" VALUE ="Use Any Value"/>
+<TABLEATTRIBUTE NAME ="Lookup condition" VALUE ="dummy = in_dummy"/>
+<TABLEATTRIBUTE NAME ="Connection Information" VALUE ="$Target"/>
+="Pre-build lookup cache" VALUE ="Auto"/>
+<TABLEATTRIBUTE NAME
+<TABLEATTRIBUTE NAME ="Subsecond Precision" VALUE ="6"/>
+</TRANSFORMATION>
+<TRANSFORMATION DESCRIPTION ="" NAME ="rtr Account" OBJECTVERSION ="1" REUSABLE ="NO" TYPE ="Router" VERSIONNUMBER ="4">
+<GROUP DESCRIPTION ="" NAME ="INPUT" ORDER ="1" TYPE ="INPUT"/>
+<GROUP DESCRIPTION ="" EXPRESSION ="Insert_Flag=1&#xD; &#xA; AND Error_Flag=&apos; N&apos; " NAME ="Insert" ORDER ="2" TYPE ="OUTPUT"/>
+<GROUP DESCRIPTION ="Path for the data when none of the group conditions are satisfied." NAME ="DEFAULT1" ORDER ="4" TYPE ="OUTPUT/DEFAULT"/>
+<GROU
+<TRANSFORMFIELD DATATYPE ="string" DEFAULTVALUE ="" DESCRIPTION ="" GROUP ="INPUT" NAME ="Id" PICTURETEXT ="" PORTTYPE ="INPUT" PRECISION ="18" SCALE ="0"/>
+<TRANSFORMFIELD DATATYPE ="integer" DEFAULTVALUE ="" DESCRIPTION ="" GROUP ="INPUT" NAME ="IsDeleted" PICTURETEXT ="" PORTTYPE ="INPUT" PRECISION ="10" SCALE ="0"/>
+
+-" UUID="ee99ed9d-f7d1-49c8-b85a-ad2d0b11e5cb">
+
+="Lookup caching enabled" VALUE ="YES"/>
+
+P DESCRIPTION ="" EXPRESSION ="Error_Flag=&apos; Y&apos;" NAME ="Error" ORDER ="3" TYPE ="OUTPUT"/>
+<TABLEATTRIBUTE NAME ="Tracing Level" VALUE ="Normal"/>
+</TRANSFORMATION>
+<TRANSFORMATION DESCRIPTION ="" NAME ="exp Error" OBJECTVERSION ="1" REUSABLE ="NO" TYPE ="Expression" VERSIONNUMBER ="1">
+<TRANSFORMFIELD DATATYPE ="string" DEFAULTVALUE ="" DESCRIPTION ="" EXPRESSION ="id" EXPRESSIONTYPE ="GENERAL" NAME ="id" PICTURETEXT ="" PORTTYPE ="INPUT/OUTPUT"
+PRECISION ="18" SCALE ="0"/>
+<TRANSFORMFIELD DATATYPE ="string" DEFAULTVALUE ="ERROR (&apos; transformation error&apos; ) " DESCRIPTION ="" EXPRESSION ="&apos; Account&apos; " EXPRESSIONTYPE ="GENERAL"
+NAME ="Source" PICTURETEXT ="" PORTTYPE ="OUTPUT" PRECISION ="15" SCALE ="0"/>
+<TRANSFORMFIELD DATATYPE ="string" DEFAULTVALUE ="ERROR (&apos; transformation error&apos; ) " DESCRIPTION ="" EXPRESSION ="&apos; Error&apos; " EXPRESSIONTYPE ="GENERAL"
+NAME ="Status" PICTURETEXT ="" PORTTYPE ="OUTPUT" PRECISION ="10" SCALE ="0"/>
+<TRANSFORMFIELD DATATYPE ="string" DEFAULTVALUE ="ERROR (&apos; transformation error&apos; ) " DESCRIPTION ="" EXPRESSION ="&apos; Unique Id is NULL for&apos; | | &apos;
+&apos; | |id| | &apos; &apos; | | &apos; from Account&apos; " EXPRESSIONTYPE ="GENERAL" NAME ="Error_Msg" PICTURETEXT ="" PORTTYPE ="OUTPUT" PRECISION ="500" SCALE ="0"/>
+<TABLEATTRIBUTE NAME ="Tracing Level" VALUE ="Normal"/>
+</TRANSFORMATION>
+<TRANSFORMATION DESCRIPTION ="" NAME ="exp acct" OBJECTVERSION ="1" REUSABLE ="NO" TYPE ="Expression" VERSIONNUMBER ="6">
+<TRANSFORMFIELD DATATYPE ="integer" DEFAULTVALUE ="" DESCRIPTION ="" EXPRESSION ="1" EXPRESSIONTYPE ="GENERAL" NAME ="dummy" PICTURETEXT ="" PORTTYPE ="LOCAL VARIABLE"
+PRECISION ="10" SCALE ="0"/>
+<TRANSFORMFIELD DATATYPE ="date/time" DEFAULTVALUE ="" DESCRIPTION ="" EXPRESSION
+="iif(isnull (:LKP.LKP_ACCOUNT (dummy) ), to_date (&apos; 1900-01-01&apos;, &apos; yyyy-mm-dd&apos; ) , : LKP. LKP_ACCOUNT (dummy) ) " EXPRESSIONTYPE ="GENERAL" NAME
+="lkp_LastModifiedDate" PICTURETEXT ="" PORTTYPE ="LOCAL VARIABLE" PRECISION ="29" SCALE ="9"/>
+<TRANSFORMFIELD DATATYPE ="string" DEFAULTVALUE ="" DESCRIPTION ="" EXPRESSION ="Id" EXPRESSIONTYPE ="GENERAL" NAME "Id" PICTURETEXT ="" PORTTYPE ="INPUT/OUTPUT"
+PRECISION ="18" SCALE ="0"/>
+<TRANSFORMFIELD DATATYPE ="integer" DEFAULTVALUE ="" DESCRIPTION ="" EXPRESSION ="IsDeleted" EXPRESSIONTYPE ="GENERAL" NAME ="IsDeleted" PICTURETEXT ="" PORTTYPE
+="INPUT/OUTPUT" PRECISION ="10" SCALE ="0"/>
+<TRANSFORMFIELD DATATYPE ="string" DEFAULTVALUE ="" DESCRIPTION ="" EXPRESSION ="MasterRecordId" EXPRESSIONTYPE ="GENERAL" NAME ="MasterRecordId" PICTURETEXT =""
+PORTTYPE ="INPUT/OUTPUT" PRECISION ="18" SCALE ="0"/>
+<TRANSFORMFIELD DATATYPE ="string" DEFAULTVALUE ="" DESCRIPTION ="" EXPRESSION ="Name" EXPRESSIONTYPE ="GENERAL" NAME ="Name" PICTURETEXT ="" PORTTYPE ="INPUT/OUTPUT"
+PRECISION ="255" SCALE ="0"/>
+<TRANSFORMFIELD DATATYPE ="string" DEFAULTVALUE ="" DESCRIPTION ="" EXPRESSION ="Business Partner Number c" EXPRESSIONTYPE ="GENERAL" NAME
+="Business Partner Number c" PICTURETEXT ="" PORTTYPE ="INPUT/OUTPUT" PRECISION ="50" SCALE ="0"/>
+<TRANSFORMFIELD DATATYPE ="string" DEFAULTVALUE ="" DESCRIPTION ="" EXPRESSION ="Vendor_ID_Payee
+="" PORTTYPE ="INPUT/OUTPUT" PRECISION ="50" SCALE ="0"/>
+<TABLEATTRIBUTE NAME ="Tracing Level" VALUE ="Normal"/>
+</TRANSFORMATION>
+
+c" TOINSTANCE ="rtr Account"
+
+c" FROMINSTANCE ="fil Account" FROMINSTANCETYPE ="Filter" TOFIELD ="Business Partner Number c" TOINSTANCE ="rtr Account"
+
+c" FROMINSTANCE ="fil Account" FROMINSTANCETYPE ="Filter" TOFIELD ="Vendor ID Payee c" TOINSTANCE ="rtr Account" TOINSTANCETYPE
+
+<CONNECTOR FROMFIELD ="ShippingPostalCodel" FROMINSTANCE ="rtr Account" FROMINSTANCETYPE ="Router" TOFIELD ="ShippingPostalCode" TOINSTANCE
+="Shortcut_to_New_Salesforce_Account" TOINSTANCETYPE ="Target Definition"/>
+<CONNECTOR FROMFIELD ="IsPartner1" FROMINSTANCE ="rtr Account" FROMINSTANCETYPE ="Router" TOFIELD ="IsPartner" TOINSTANCE ="Shortcut_to_New_Salesforce_Account"
+TOINSTANCETYPE ="Target Definition"/>
+<CONNECTOR FROMFIELD ="SEER c1" FROMINSTANCE ="rtr Account" FROMINSTANCETYPE ="Router" TOFIELD ="SEER" TOINSTANCE ="Shortcut_to New_Salesforce_Account" TOINSTANCETYPE
+="Target Definition"/>
+<CONNECTOR FROMFIELD ="Data Quality Score c1" FROMINSTANCE ="rtr Account" FROMINSTANCETYPE ="Router" TOFIELD ="Data Quality Score" TOINSTANCE
+="Shortcut to New Salesforce Account" TOINSTANCETYPE ="Target Definition"/>
+<CONNECTOR FROMFIELD ="Manual Duct Design c" FROMINSTANCE ="fil Account" FROMINSTANCETYPE ="Filter" TOFIELD ="Manual Duct Design c" TOINSTANCE ="rtr Account"
+TOINSTANCETYPE ="Router"/>
+<CONNECTOR FROMFIELD ="Participation Level DSM c" FROMINSTANCE ="fil Account" FROMINSTANCETYPE ="Filter" TOFIELD ="Participation Level_DSM
+TOINSTANCETYPE ="Router"/>
+<CONNECTOR FROMFIELD ="Business Partner Number
+TOINSTANCETYPE ="Router"/>
+<CONNECTOR FROMFIELD ="Vendor ID Payee
+="Router"/>
+<CONNECTOR FROMFIELD ="Id3" FROMINSTANCE ="rtr Account" FROMINSTANCETYPE ="Router" TOFIELD ="id" TOINSTANCE ="exp Error" TOINSTANCETYPE ="Expression"/>
+<TARGETLOADORDER ORDER ="1" TARGETINSTANCE ="Shortcut to Error Log"/>
+<TARGETLOADORDER ORDER ="1" TARGETINSTANCE ="Shortcut to New Salesforce Account"/>
+<MAPPINGVARIABLE DATATYPE ="string" DEFAULTVALUE ="" DESCRIPTION ="" ISEXPRESSIONVARIABLE ="NO" ISPARAM ="YES" NAME ="$$TARGET SCHEMA DET STG" PRECISION ="100" SCALE ="0"
+USERDEFINED ="YES"/>
+<ERPINFO/>
+</MAPPING>
+<SHORTCUT COMMENTS ="" DBDNAME ="Salesforce" FOLDERNAME ="REGRENEW_SHARED" NAME ="Shortcut_to_Account" OBJECTSUBTYPE ="Source Definition" OBJECTTYPE ="SOURCE" REFERENCEDDBD
+="Salesforce" REFERENCETYPE ="LOCAL" REFOBJECTNAME ="Account" REPOSITORYNAME ="REPO_ECOM_DEV" VERSIONNUMBER ="1"/>
+<SHORTCUT COMMENTS ="" FOLDERNAME ="REGRENEW_SHARED" NAME ="Shortcut_to_New_Salesforce_Account" OBJECTSUBTYPE ="Target Definition" OBJECTTYPE ="TARGET" REFERENCETYPE ="LOCAL"
+REFOBJECTNAME ="New_Salesforce_Account" REPOSITORYNAME ="REPO_ECOM_DEV" VERSIONNUMBER ="1"/>
+<SHORTCUT COMMENTS ="" FOLDERNAME ="REGRENEW_SHARED" NAME ="Shortcut_to_Error_Log" OBJECTSUBTYPE ="Target Definition" OBJECTTYPE ="TARGET" REFERENCETYPE ="LOCAL" REFOBJECTNAME
+="Error_Log" REPOSITORYNAME ="REPO ECOM DEV" VERSIONNUMBER ="1"/>
+FOLDER>
+<FOLDER NAME="REGRENEW_SHARED" GROUP="" OWNER="Administrator" SHARED="SHARED" DESCRIPTION="WO0000001270969" PERMISSIONS="rwx --
+
+" UUID="3a19c91f-66bc-408b-99ad-3d7e58ea4f79">
+<SOURCE BUSINESSNAME ="" COMPONENTVERSION ="8006001" DATABASETYPE ="Salesforce" DBDNAME ="Salesforce" DESCRIPTION ="" NAME ="Account" OBJECTVERSION ="1" OWNERNAME =""
+VERSIONNUMBER ="4">
+<SOURCEFIELD BUSINESSNAME ="" DATATYPE ="id" DESCRIPTION ="" FIELDNUMBER ="1" FIELDPROPERTY ="0" FIELDTYPE ="ELEMITEM" HIDDEN ="NO" KEYTYPE ="NOT A KEY" LENGTH ="0" LEVEL
+="0" NAME ="Id" NULLABLE ="NOTNULL" OCCURS ="0" OFFSET ="0" PHYSICALLENGTH ="18" PHYSICALOFFSET ="0" PICTURETEXT ="" PRECISION ="18" SCALE ="0" USAGE FLAGS ="">
+<FIELDATTRIBUTE NAME ="Createable" VALUE ="0"/>
+<FIELDATTRIBUTE NAME ="Updateable" VALUE ="0"/>
+<FIELDATTRIBUTE NAME ="External ID" VALUE ="0"/>
+<FIELDATTRIBUTE NAME ="SforceName" VALUE ="Id"/>
+<FIELDATTRIBUTE NAME ="Reference To" VALUE =""/>
+<FIELDATTRIBUTE NAME ="IDLookUp" VALUE ="1"/>
+</SOURCEFIELD>
+<SOURCEFIELD BUSINESSNAME ="" DATATYPE ="boolean" DESCRIPTION ="" FIELDNUMBER ="2" FIELDPROPERTY ="0" FIELDTYPE ="ELEMITEM" HIDDEN ="NO" KEYTYPE ="NOT A KEY" LENGTH ="11"
+LEVEL ="0" NAME ="IsDeleted" NULLABLE ="NOTNULL" OCCURS ="0" OFFSET ="0" PHYSICALLENGTH ="10" PHYSICALOFFSET ="18" PICTURETEXT ="" PRECISION ="10" SCALE ="0" USAGE FLAGS
+="">
+<FIELDATTRIBUTE NAME ="Createable" VALUE ="0"/>
+<FIELDATTRIBUTE NAME ="Updateable" VALUE ="0"/>
+<FIELDATTRIBUTE NAME ="External ID" VALUE ="0"/>
+<FIELDATTRIBUTE NAME ="SforceName" VALUE ="IsDeleted"/>
+<FIELDATTRIBUTE NAME ="Reference To" VALUE =""/>
+<FIELDATTRIBUTE NAME ="IDLookUp" VALUE ="0"/>
+</SOURCEFIELD>
+all columnds
+<METADATAEXTENSION COMPONENTVERSION ="8006001" DATATYPE ="STRING" DESCRIPTION ="Name of the Salesforce.com object" DOMAINNAME ="Salesforce" ISCLIENTEDITABLE ="NO"
+ISCLIENTVISIBLE ="YES" ISREUSABLE ="YES" ISSHAREREAD ="NO" ISSHAREWRITE ="NO" MAXLENGTH ="255" NAME ="Object Type" VALUE ="Account" VENDORNAME ="INFORMATICA"/>
+</SOURCE>
+<TARGET BUSINESSNAME ="" CONSTRAINT ="" DATABASETYPE ="Microsoft SQL Server" DESCRIPTION ="" NAME ="Error Log" OBJECTVERSION ="1" TABLEOPTIONS ="" VERSIONNUMBER ="1">
+<TARGETFIELD BUSINESSNAME ="" DATATYPE ="int" DESCRIPTION ="" FIELDNUMBER ="1" KEYTYPE ="PRIMARY KEY" NAME ="Id" NULLABLE ="NOTNULL" PICTURETEXT ="" PRECISION ="10" SCALE
+="0"/>
+<TARGETFIELD BUSINESSNAME ="" DATATYPE ="varchar" DESCRIPTION ="" FIELDNUMBER ="2" KEYTYPE ="NOT A KEY" NAME ="Project Id" NULLABLE ="NOTNULL" PICTURETEXT ="" PRECISION
+="16" SCALE ="0"/>
+<TARGETFIELD BUSINESSNAME ="" DATATYPE ="varchar" DESCRIPTION ="" FIELDNUMBER ="3" KEYTYPE ="NOT A KEY" NAME ="Project Number" NULLABLE ="NOTNULL" PICTURETEXT =""
+PRECISION ="16" SCALE ="0"/>
+<TARGETFIELD BUSINESSNAME ="" DATATYPE ="datetime" DESCRIPTION ="" FIELDNUMBER ="14" KEYTYPE ="NOT A KEY" NAME ="Last Update Date" NULLABLE ="NOTNULL" PICTURETEXT =""
+PRECISION ="23" SCALE ="3"/>
+</TARGET>
+<TARGET BUSINESSNAME ="" CONSTRAINT ="" DATABASETYPE ="Microsoft SQL Server" DESCRIPTION ="" NAME ="New_Salesforce Account" OBJECTVERSION ="1" TABLEOPTIONS ="" VERSIONNUMBER
+="4">
+<TARGETFIELD BUSINESSNAME ="" DATATYPE ="int" DESCRIPTION ="" FIELDNUMBER ="1" KEYTYPE ="PRIMARY KEY" NAME ="New Salesforce Account Id" NULLABLE ="NOTNULL" PICTURETEXT =""
+PRECISION ="10" SCALE ="0"/>
+<TARGETFIELD BUSINESSNAME ="" DATATYPE ="varchar" DESCRIPTION ="" FIELDNUMBER ="2" KEYTYPE ="NOT A KEY" NAME ="Id" NULLABLE ="NOTNULL" PICTURETEXT ="" PRECISION ="64"
+SCALE ="0"/>
+<TARGETFIELD BUSINESSNAME ="" DATATYPE ="varchar" DESCRIPTION ="" FIELDNUMBER ="176" KEYTYPE ="NOT A KEY" NAME ="Vendor ID Payee" NULLABLE ="NULL" PICTURETEXT =""
+PRECISION ="50" SCALE ="0"/>
+</TARGET>
+</FOLDER>
+</REPOSITORY>
+</POWERMART>
